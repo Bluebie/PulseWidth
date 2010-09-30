@@ -14,17 +14,42 @@ class Fancyplexer
     :sample_rate => 48000, # Samples Per Second
     :max_angle => 1.0, # Maximum angle possible, and also, -this is the minimum, 0.0 is centered.
     :outputs => 1, # Channels to write
-    :gap => 0.0005, # Leaves a little dead gap after each PPM signal
+    :gap => 0.003, # Leaves a little dead gap after each PPM signal
     :postgap => 0.002, # gap to leave after the run of PPM signals
     :high => -1.0,
     :low => +1.0,
     :left => 0.001, # seconds; These numbers define the pulse widths
     :right => 0.002, # seconds
+    :duration => 1.0, # seconds
+    :transition => :linear, # a transition from the Transitions constant thingy
+    :transition_args => []
+  }
+  
+  Transitions = {
+    :linear => Proc.new { |time| time },
+    :pow => Proc.new { |time, power| time ** (power || 6.0) },
+    :exponential => Proc.new { |time| 2.0 ** (8.0 * (time - 1.0)) },
+    :circular => Proc.new { |time| 1.0 - Math.sin(Math.acos(time)) },
+  	:sine => Proc.new { |time| 1.0 - Math.sin((1.0 - time) * Math::PI / 2.0) },
+  	:back => Proc.new { |time, foo|
+  		foo ||= 1.618;
+  	  (p ** 2.0) * ((foo.to_f + 1.0) * time - foo);
+  	},
+    :bounce => lambda { |time|
+  		a = 0.0; b = 1.0; while(true) do
+  			return b * b - (((11.0 - 6.0 * a - 11.0 * time) / 4.0) ** 2.0) if time >= (7.0 - 4.0 * a) / 11.0
+  			a += b
+  			b = b / 2.0
+  		end
+  	},
+    :elastic => Proc.new { |time, foo|
+  		(2.0 ** (10.0 * (time -= 1.0))) * Math.cos(20.0 * time * Math::PI * (foo.to_f || 1.0) / 3.0)
+  	}
   }
   
   def initialize filename, options = {}
     @file = "#{filename}"
-    DefaultOptions.merge(options).each do |key, value|
+    (@options = DefaultOptions.merge(options)).each do |key, value|
      self.instance_variable_set "@#{key}", value
     end
 
@@ -64,18 +89,21 @@ class Fancyplexer
   # to make a tweener block, first is the from angle, second argument is the to
   # value, and the third is 'time', which is between 0.0 and 1.0, relative to the
   # duration, so imagine it as a relative position within the animation.
-  def tween future, duration = 1.0, &tweener
-    tweener ||= proc do |from, to, time|
-     add = to.to_f - from.to_f
-     from.to_f + (add * time)
-    end
+  def tween *args, &tweener
+    options = @options.merge(args.last.is_a?(Hash) ? args.pop : Hash.new)
+    tweener = options[:transition] if options[:transition] unless tweener
+    tweener = Transitions[tweener] if tweener.is_a?(Symbol)
     
     # TODO: Write this!
     from = @angles.dup
-    frames = [duration.to_f * @sample_rate / frame_width, 1].max.round
+    frames = [options[:duration].to_f * @sample_rate / frame_width, 1].max.round
+    future = args.map { |i| i.to_f }
     frames.times do |frame|
      angles = Array.new(@outputs, 0.0)
-     @outputs.times { |idx| angles[idx] = tweener[from[idx], (future[idx] || from[idx]).to_f, frame.to_f / frames.to_f] }
+     @outputs.times do |idx|
+       position = tweener[(frame.to_f + 1) / frames.to_f, *options[:transition_args]]
+       angles[idx] = map(position.to_f, 0.0, 1.0, from[idx], (future[idx] || from[idx]).to_f)
+     end
      set *angles
      hold
     end
