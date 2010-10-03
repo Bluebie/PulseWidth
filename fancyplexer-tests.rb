@@ -13,12 +13,14 @@ m.close
 
 m = Fancyplexer.new('fancytweened 5.wav', :outputs => 5)
 m.world do
-  tween +1, +1, +1, +1, +1
-  tween -1, -1, -1, -1, -1
+  set -1, -1, -1, -1, -1
+  tween +1, +1, +1, +1, +1, :transition => :sine
+  tween -1, -1, -1, -1, -1, :transition => :sine
 end
 
 m = Fancyplexer.new('fancytweened 1.wav', :outputs => 1)
 m.world do
-  tween 1.0
-  tween -1.0
+  set -1.0
+  tween 1.0, :transition => :sine
+  tween -1.0, :transition => :sine
 end

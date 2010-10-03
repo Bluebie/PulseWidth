@@ -7,18 +7,18 @@
 
 // And now for some settings...
 #define input 0
-#define outputs 10
+#define outputs 4
 #define first_output 2
-#define postgap 3
+#define postgap_multiplier 2
 
 // Just a few little variables to keep our head on straight...
 unsigned char iter = 0;
 
 void setup() {
-  // make our outputs all be outputty!
-  for (iter = first_output; iter < first_output + outputs; iter++) {
-    pinMode(iter, OUTPUT);
-  }
+  pinMode(2, OUTPUT);
+  pinMode(3, OUTPUT);
+  pinMode(4, OUTPUT);
+  pinMode(5, OUTPUT);
   
   // setup the analog comparitor
   // see http://www.bot-thoughts.com/2010/09/arduino-avr-analog-comparator.html
@@ -31,17 +31,29 @@ void setup() {
   ADCSRA = 0b10000000;
   // ACME=0 (on) ADEN=0 MUX = b000 for use of AIN1
   ADCSRB = 0b00000000;
+  Serial.begin(9600);
 }
 
-#define pollComparatorUntil(value) while (((ACSR & 0b00100000) > 1) != value) { }
+unsigned long counter = 0;
+#define pollComparatorUntil(value) counter = 1; while (((ACSR & 0b00100000) > 1) != value) { counter++; }
 
 unsigned char output = first_output;
-unsigned long previous_high = 0;
+unsigned long last_low_gap = 1;
 void loop() {
   pollComparatorUntil(HIGH);
-  if (previous_high > millis() + postgap) output = first_output;
+  if (counter > (last_low_gap * postgap_multiplier)) {
+    output = first_output;
+    Serial.println('Reset!');
+  } else {
+    Serial.print("didn't reset! last_low_gap = ");
+    Serial.print(last_low_gap);
+    Serial.print(", counter = ");
+    Serial.println(counter);
+  }
+  
+  last_low_gap = counter;
   digitalWrite(output, HIGH);
-  previous_high = millis();
+  Serial.println(counter);
   
   pollComparatorUntil(LOW);
   digitalWrite(output, LOW);

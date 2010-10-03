@@ -14,8 +14,8 @@ class Fancyplexer
     :sample_rate => 48000, # Samples Per Second
     :max_angle => 1.0, # Maximum angle possible, and also, -this is the minimum, 0.0 is centered.
     :outputs => 1, # Channels to write
-    :gap => 0.003, # Leaves a little dead gap after each PPM signal
-    :postgap => 0.002, # gap to leave after the run of PPM signals
+    :gap => 0.0005, # Leaves a little dead gap after each PPM signal
+    :postgap => 0.009, # gap to leave after the run of PPM signals
     :high => -1.0,
     :low => +1.0,
     :left => 0.001, # seconds; These numbers define the pulse widths
@@ -25,7 +25,7 @@ class Fancyplexer
     :transition_args => []
   }
   
-  Transitions = {
+  TransitionBases = {
     :linear => Proc.new { |time| time },
     :pow => Proc.new { |time, power| time ** (power || 6.0) },
     :exponential => Proc.new { |time| 2.0 ** (8.0 * (time - 1.0)) },
@@ -46,6 +46,11 @@ class Fancyplexer
   		(2.0 ** (10.0 * (time -= 1.0))) * Math.cos(20.0 * time * Math::PI * (foo.to_f || 1.0) / 3.0)
   	}
   }
+  
+  begin
+    versions
+    Transitions = versions.dup
+  end
   
   def initialize filename, options = {}
     @file = "#{filename}"
