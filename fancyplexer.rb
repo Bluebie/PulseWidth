@@ -14,18 +14,16 @@ class Fancyplexer
     :sample_rate => 48000, # Samples Per Second
     :max_angle => 1.0, # Maximum angle possible, and also, -this is the minimum, 0.0 is centered.
     :outputs => 1, # Channels to write
-    :gap => 0.0005, # Leaves a little dead gap after each PPM signal
-    :postgap => 0.009, # gap to leave after the run of PPM signals
+    :postgap => 3.0, # gap to leave after the run of PPM signals
     :high => -1.0,
     :low => +1.0,
     :left => 0.001, # seconds; These numbers define the pulse widths
     :right => 0.002, # seconds
     :duration => 1.0, # seconds
-    :transition => :linear, # a transition from the Transitions constant thingy
-    :transition_args => []
+    :transition => :linear # a transition from the Transitions constant thingy
   }
   
-  TransitionBases = {
+  TransitionBases = { # a transition gets a 'time' between 0.0 and 1.0, and should return a position in that same range
     :linear => Proc.new { |time| time },
     :pow => Proc.new { |time, power| time ** (power || 6.0) },
     :exponential => Proc.new { |time| 2.0 ** (8.0 * (time - 1.0)) },
@@ -46,11 +44,6 @@ class Fancyplexer
   		(2.0 ** (10.0 * (time -= 1.0))) * Math.cos(20.0 * time * Math::PI * (foo.to_f || 1.0) / 3.0)
   	}
   }
-  
-  begin
-    versions
-    Transitions = versions.dup
-  end
   
   def initialize filename, options = {}
     @file = "#{filename}"
@@ -76,18 +69,19 @@ class Fancyplexer
 
   # go to and hold at the currently set positions for a duration (default: smallest possible moment)
   def hold duration = 0.0
-    buffer = new_pulse_buffer
-    frame_width = buffer.size * (@outputs + 1)
-    [duration.to_f * @sample_rate.to_f / frame_width, 1].max.round.times do
-      @angles.each do |angle|
+    ran_for = 0.0
+    while duration > 0.0
+      (@angles + [3.0]).each do |angle|
+        width = angle_becomes_width angle
+        buffer = new_pulse_buffer width
         set_buffer buffer, @low
-        set_buffer buffer, @high, angle_becomes_width(angle) * @sample_rate
+        set_buffer buffer, @high, @sample_rate * (@left / 2)
         @snd.write buffer
+        duration -= width
+        ran_for += width
       end
-      
-      # add our postgap so the reciever can reset itself
-      @snd.write @postgap_buffer
     end
+    ran_for
   end
   
   # transition from current values to a set of values, linearly, or otherwise
@@ -97,22 +91,38 @@ class Fancyplexer
   def tween *args, &tweener
     options = @options.merge(args.last.is_a?(Hash) ? args.pop : Hash.new)
     tweener = options[:transition] if options[:transition] unless tweener
-    tweener = Transitions[tweener] if tweener.is_a?(Symbol)
+    tweener = transition(tweener, :both) unless tweener.is_a?(Proc)
     
     # TODO: Write this!
     from = @angles.dup
-    frames = [options[:duration].to_f * @sample_rate / frame_width, 1].max.round
+    duration = options[:duration].to_f
+    time = 0.0
     future = args.map { |i| i.to_f }
-    frames.times do |frame|
-     angles = Array.new(@outputs, 0.0)
-     @outputs.times do |idx|
-       position = tweener[(frame.to_f + 1) / frames.to_f, *options[:transition_args]]
-       angles[idx] = map(position.to_f, 0.0, 1.0, from[idx], (future[idx] || from[idx]).to_f)
-     end
-     set *angles
-     hold
+    
+    while time < duration
+      angles = (0...from.length).to_a.map do
+        map(tweener[time / duration].to_f, 0.0, 1.0, from[idx], (future[idx] || from[idx]).to_f)
+      end
+      
+      set *angles
+      time += hold
     end
     # TODONE: This!
+  end
+  
+  # gets a transition
+  def transition(name, variety, *args)
+    base = TransitionBases[name.to_sym]
+    
+    if variety == :in
+      proc { |t| base[t, *args] }
+    elsif variety == :out
+      proc { |t| 1.0 - base[1.0 - t, *args] }
+    elsif variety == :inout || variety == :both
+      proc { |t| t < 0.5 ? base[t * 2, *args] / 2.0 : 1.0 - (base[map(t, 0.5, 1.0, 1.0, 0.0), *args] / 2.0) }
+    else
+      raise 'Unknown Variety'
+    end
   end
   
   # creates a little world made of sunshine and lollipops!
@@ -132,8 +142,8 @@ class Fancyplexer
   end
   
   # makes a little pulse buffer
-  def new_pulse_buffer(length = false)
-    RubyAudio::Buffer.new('float', length ? length * @sample_rate : pulse_width)
+  def new_pulse_buffer(length)
+    RubyAudio::Buffer.new('float', (length * @sample_rate).round)
   end
   
   # set a given width of buffer to a value
@@ -142,7 +152,4 @@ class Fancyplexer
       buffer[idx] = value
     end
   end
-  
-  def pulse_width; (@right + @gap).to_f * @sample_rate.to_f; end
-  def frame_width; pulse_width * (@outputs + 1); end
 end

@@ -9,7 +9,12 @@ m.world do
   set -0.5, +0.5
   hold 1.0
 end
-m.close
+
+m = Fancyplexer.new('fancy-centred-test.wav', :outputs => 3)
+m.world do
+  set -1.0, 0.0, +1.0
+  hold 10.0
+end
 
 m = Fancyplexer.new('fancytweened 5.wav', :outputs => 5)
 m.world do
